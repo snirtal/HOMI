@@ -9,6 +9,7 @@
     "shared"
   ],
   "scripts": {
+    "dev": "npm run dev -w @homi/client",
     "test": "npm test -w @homi/shared",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
