@@ -1,0 +1,15 @@
+{
+  "name": "@homi/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@homi/shared": "0.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

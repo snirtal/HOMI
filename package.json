@@ -1,0 +1,18 @@
+{
+  "name": "homi",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Homi shared household expenses, balances, and tasks",
+  "workspaces": [
+    "client",
+    "server",
+    "shared"
+  ],
+  "scripts": {
+    "test": "npm test -w @homi/shared",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
