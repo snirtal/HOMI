@@ -49,13 +49,16 @@ h3 { font-size: 15px; }
 .brand strong, .brand-mobile strong, .side-foot strong, .who-name { display: block; }
 .brand small, .brand-mobile small, .side-foot small, .topbar-desktop small { display: block; color: var(--muted); font-size: 12px; }
 .brand-mark {
-  width: 36px;
+  display: block;
   height: 36px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  background: var(--green-deep);
-  color: #e7f6ee;
+  width: auto;
+  padding: 0;
+  background: none;
+}
+.brand-mark img {
+  display: block;
+  height: 36px;
+  width: auto;
 }
 .side-nav { display: flex; flex-direction: column; gap: 4px; }
 .nav-link, .bottom-link, .icon-button, .text-action, .check-button, .task-copy, .expense-open, .expense-main, .expense-amount, .action {

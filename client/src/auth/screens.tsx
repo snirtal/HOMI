@@ -1,6 +1,5 @@
 import { useState, type FormEvent } from "react";
 import { Button, Field } from "../components/ui";
-import { IconHome } from "../components/Icons";
 import { api, type AccountSession } from "./api";
 
 type Mode = "login" | "signup";
@@ -53,7 +52,7 @@ export function AuthScreen({
       <form className="auth-card" onSubmit={submit}>
         <div className="brand">
           <span className="brand-mark">
-            <IconHome size={18} />
+            <img src="/homi-logo-header.png" alt="" />
           </span>
           <span>
             <strong>Homi</strong>

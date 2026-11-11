@@ -30,7 +30,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">
-            <IconHome size={18} />
+            <img src="/homi-logo-header.png" alt="" />
           </span>
           <span>
             <strong>Homi</strong>
@@ -65,7 +65,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <header className="topbar">
           <div className="brand-mobile">
             <span className="brand-mark">
-              <IconHome size={16} />
+              <img src="/homi-logo-header.png" alt="" />
             </span>
             <span>
               <strong>Homi</strong>
