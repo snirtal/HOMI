@@ -1,7 +1,8 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { expensePaid, expenseStatus } from "../lib/expenses";
 import { formatDay, money, percentLabel, todayISO } from "../lib/format";
-import { MEMBERS, type Category, type Expense } from "../types";
+import { useHousehold } from "../state/store";
+import { type Category, type Expense, type Member } from "../types";
 import { CategoryIcon, IconCheck, IconChevron } from "./Icons";
 
 export function MonthSwitcher({
@@ -34,13 +35,18 @@ export function Avatar({ name, color, size = 36 }: { name: string; color: string
   );
 }
 
-export function StatusPill({ expense }: { expense: Expense }) {
+export function StatusPill({ expense, onClick }: { expense: Expense; onClick: () => void }) {
   const status = expenseStatus(expense);
   const today = todayISO();
   const overdue = status !== "paid" && Boolean(expense.dueDate && expense.dueDate < today);
   const label = overdue ? "Overdue" : status === "paid" ? "Paid" : status === "partial" ? "Partial" : "Unpaid";
   const tone = overdue ? "overdue" : status;
-  return <span className={`status ${tone}`}>{label}</span>;
+  const action = status === "paid" ? "Mark unpaid" : status === "partial" ? "Mark the rest paid" : "Mark paid";
+  return (
+    <button type="button" className={`status ${tone}`} onClick={onClick} aria-label={action}>
+      {label}
+    </button>
+  );
 }
 
 export function CategoryMark({ category, size = 42 }: { category: Category; size?: number }) {
@@ -59,17 +65,26 @@ export function CategoryMark({ category, size = 42 }: { category: Category; size
   );
 }
 
-export function memberName(id: string): string {
-  return MEMBERS.find((member) => member.id === id)?.name ?? "Member";
+export function memberName(members: readonly Member[], id: string): string {
+  return members.find((member) => member.id === id)?.name ?? "Member";
 }
 
-export function payerSummary(expense: Expense): string {
+export function MemberOptions() {
+  const { members } = useHousehold();
+  return members.map((member) => (
+    <option key={member.id} value={member.id}>
+      {member.name}
+    </option>
+  ));
+}
+
+export function payerSummary(expense: Expense, members: readonly Member[]): string {
   const status = expenseStatus(expense);
   const active = expense.payments.filter((payment) => !payment.voided);
   if (active.length === 0 || status === "unpaid") {
     return expense.dueDate ? `Due ${formatDay(expense.dueDate)}` : "No payment yet";
   }
-  const names = [...new Set(active.map((payment) => memberName(payment.memberId)))];
+  const names = [...new Set(active.map((payment) => memberName(members, payment.memberId)))];
   const latest = [...active].sort((a, b) => a.paidOn.localeCompare(b.paidOn)).at(-1);
   const when = latest ? formatDay(latest.paidOn) : "";
   const who = names.length === 1 ? names[0] : names.join(" and ");
@@ -94,25 +109,33 @@ export function ExpenseRow({
   onMarkPaid: () => void;
   onMarkUnpaid: () => void;
 }) {
+  const { members } = useHousehold();
   const status = expenseStatus(expense);
   const paid = expensePaid(expense);
   return (
     <article className="expense">
-      <button type="button" className="expense-open" onClick={onOpen}>
-        <CategoryMark category={category} />
-        <span className="expense-copy">
-          <span className="expense-title">{expense.title}</span>
-          <span className="muted">
-            {category.name} · {splitSummary(expense)}
+      <div className="expense-open">
+        <button type="button" className="expense-main" onClick={onOpen}>
+          <CategoryMark category={category} />
+          <span className="expense-copy">
+            <span className="expense-title">{expense.title}</span>
+            <span className="muted">
+              {category.name} · {splitSummary(expense)}
+            </span>
+            <span className="muted">{payerSummary(expense, members)}</span>
           </span>
-          <span className="muted">{payerSummary(expense)}</span>
-        </span>
+        </button>
         <span className="expense-side">
-          <strong className="amount">{money(expense.amountAgorot)}</strong>
-          <StatusPill expense={expense} />
+          <button type="button" className="expense-amount" onClick={onOpen}>
+            <strong className="amount">{money(expense.amountAgorot)}</strong>
+          </button>
+          <StatusPill
+            expense={expense}
+            onClick={() => (status === "paid" ? onMarkUnpaid() : onMarkPaid())}
+          />
           {status === "partial" ? <span className="muted tiny">Left {money(expense.amountAgorot - paid)}</span> : null}
         </span>
-      </button>
+      </div>
       {status === "paid" ? (
         <button type="button" className="text-action" onClick={onMarkUnpaid}>
           Mark unpaid

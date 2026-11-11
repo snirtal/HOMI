@@ -1,20 +1,22 @@
-import { ALEX_ID } from "../types";
 import { activityDate, expenseStatus, monthFigures } from "../lib/expenses";
 import { formatDay, greeting, money, monthLabel, netLabel, todayISO, youBalance } from "../lib/format";
 import { useHousehold } from "../state/store";
 import { IconBalances, IconPlus, IconTasks } from "../components/Icons";
-import { ExpenseRow, MonthSwitcher, PaidBar } from "../components/ui";
+import { ExpenseRow, MonthSwitcher, PaidBar, memberName } from "../components/ui";
 
 export function Dashboard() {
-  const { state, positions, outstanding, openExpense, openTask, go, markPaid, markUnpaid, shiftMonth, toggleTask } =
+  const { state, members, youId, positions, outstanding, openExpense, openTask, go, markPaid, markUnpaid, shiftMonth, toggleTask } =
     useHousehold();
   const categories = new Map(state.categories.map((category) => [category.id, category]));
   const monthExpenses = state.expenses
     .filter((expense) => !expense.deleted && expense.billingYear === state.year && expense.billingMonth === state.month)
     .sort((left, right) => activityDate(right).localeCompare(activityDate(left)));
   const figures = monthFigures(monthExpenses);
-  const you = outstanding.find((row) => row.memberId === ALEX_ID);
-  const balance = youBalance(you?.netAgorot ?? 0, "Jordan");
+  const you = outstanding.find((row) => row.memberId === youId);
+  const other = members.find((member) => member.id !== youId);
+  const balance = other
+    ? youBalance(you?.netAgorot ?? 0, other.name)
+    : { title: money(Math.abs(you?.netAgorot ?? 0)), detail: "Only you are in this household", tone: "zero" as const };
   const today = todayISO();
   const attention = [...state.expenses]
     .filter((expense) => !expense.deleted && expense.billingYear === state.year && expense.billingMonth === state.month)
@@ -94,7 +96,7 @@ export function Dashboard() {
         <div className="mini-nets">
           {positions.map((row) => (
             <span key={row.memberId}>
-              {row.memberId === ALEX_ID ? "You" : "Jordan"} · {netLabel(row.netAgorot)} this month
+              {row.memberId === youId ? "You" : memberName(members, row.memberId)} · {netLabel(row.netAgorot)} this month
             </span>
           ))}
         </div>
@@ -144,7 +146,7 @@ export function Dashboard() {
               <span>
                 <strong>{task.title}</strong>
                 <span className="muted">
-                  {task.assignedMemberId === ALEX_ID ? "Alex" : "Jordan"} ·{" "}
+                  {memberName(members, task.assignedMemberId)} ·{" "}
                   {task.dueDate < today ? "Overdue" : formatDay(task.dueDate)}
                 </span>
               </span>

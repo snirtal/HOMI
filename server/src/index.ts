@@ -1,2 +1,7 @@
-/** Homi API process. HTTP routes start in a later phase. */
-export const serviceName = "homi";
+import { app } from "./app.js";
+
+const port = Number(process.env.PORT) || 8787;
+
+app.listen(port, "127.0.0.1", () => {
+  console.log(`Homi API http://127.0.0.1:${port}`);
+});

@@ -1,13 +1,16 @@
-import { ALEX_ID } from "../types";
 import { monthFigures } from "../lib/expenses";
 import { formatDay, money, monthLabel, netLabel, youBalance } from "../lib/format";
 import { useHousehold } from "../state/store";
 import { Button, MonthSwitcher, memberName } from "../components/ui";
 
 export function Balances() {
-  const { state, positions, outstanding, shiftMonth, openSettlement, voidSettlement } = useHousehold();
-  const you = outstanding.find((row) => row.memberId === ALEX_ID);
-  const balance = youBalance(you?.netAgorot ?? 0, "Jordan");
+  const { state, members, youId, positions, outstanding, shiftMonth, openSettlement, voidSettlement } = useHousehold();
+  const you = outstanding.find((row) => row.memberId === youId);
+  const youName = memberName(members, youId);
+  const other = members.find((member) => member.id !== youId);
+  const balance = other
+    ? youBalance(you?.netAgorot ?? 0, other.name)
+    : { title: money(Math.abs(you?.netAgorot ?? 0)), detail: "Only you are in this household", tone: "zero" as const };
   const monthExpenses = state.expenses.filter(
     (expense) => !expense.deleted && expense.billingYear === state.year && expense.billingMonth === state.month,
   );
@@ -21,7 +24,7 @@ export function Balances() {
           <p className="eyebrow">Who owes whom</p>
           <h1>Balances</h1>
         </div>
-        <Button onClick={openSettlement}>Record settlement</Button>
+        {members.length > 1 ? <Button onClick={openSettlement}>Record settlement</Button> : null}
       </header>
 
       <article className="card balance-hero">
@@ -33,12 +36,12 @@ export function Balances() {
 
       <div className="pair">
         <article className="card stat">
-          <p className="eyebrow">Alex paid</p>
+          <p className="eyebrow">{youName} paid</p>
           <strong>{money(you?.paidAgorot ?? 0)}</strong>
           <p className="muted">Money sent to providers.</p>
         </article>
         <article className="card stat">
-          <p className="eyebrow">Alex's share</p>
+          <p className="eyebrow">{youName}'s share</p>
           <strong>{money(you?.shareOfPaidAgorot ?? 0)}</strong>
           <p className="muted">Share of bills that were actually paid.</p>
         </article>
@@ -60,7 +63,7 @@ export function Balances() {
           <tbody>
             {outstanding.map((row) => (
               <tr key={row.memberId}>
-                <td>{row.memberId === ALEX_ID ? "Alex" : "Jordan"}</td>
+                <td>{memberName(members, row.memberId)}</td>
                 <td>{money(row.paidAgorot)}</td>
                 <td>{money(row.shareOfPaidAgorot)}</td>
                 <td>{money(row.settlementsSentAgorot)}</td>
@@ -99,7 +102,7 @@ export function Balances() {
             <tbody>
               {positions.map((row) => (
                 <tr key={row.memberId}>
-                  <td>{row.memberId === ALEX_ID ? "Alex" : "Jordan"}</td>
+                  <td>{memberName(members, row.memberId)}</td>
                   <td>{money(row.paidAgorot)}</td>
                   <td>{money(row.shareOfPaidAgorot)}</td>
                   <td>{netLabel(row.netAgorot)}</td>
@@ -118,7 +121,7 @@ export function Balances() {
             <li key={settlement.id}>
               <span>
                 <strong>
-                  {memberName(settlement.fromMemberId)} paid {memberName(settlement.toMemberId)}{" "}
+                  {memberName(members, settlement.fromMemberId)} paid {memberName(members, settlement.toMemberId)}{" "}
                   {money(settlement.amountAgorot)}
                 </strong>
                 <span className="muted">
@@ -133,7 +136,11 @@ export function Balances() {
           ))}
         </ul>
       </article>
-      <p className="fine-print">Alex is the person using this preview. Jordan is the other household member.</p>
+      <p className="fine-print">
+        {other
+          ? `${youName} is the person using this preview. ${other.name} is the other household member.`
+          : `${youName} is the only person in this preview.`}
+      </p>
     </section>
   );
 }

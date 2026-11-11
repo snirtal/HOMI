@@ -21,7 +21,8 @@ const NAV = [
 ] as const;
 
 export function Shell({ children }: { children: ReactNode }) {
-  const { state, go, setMoreOpen } = useHousehold();
+  const { state, members, youId, go, setMoreOpen } = useHousehold();
+  const you = members.find((member) => member.id === youId) ?? members[0];
   const moreActive = state.screen === "history" || state.screen === "settings";
 
   return (
@@ -53,9 +54,9 @@ export function Shell({ children }: { children: ReactNode }) {
           })}
         </nav>
         <div className="side-foot">
-          <Avatar name="Alex" color="#1f7a4d" size={32} />
+          <Avatar name={you?.name ?? "You"} color={you?.color ?? "#1f7a4d"} size={32} />
           <span>
-            <strong>Alex</strong>
+            <strong>{you?.name}</strong>
             <small>{state.householdName}</small>
           </span>
         </div>
@@ -76,8 +77,8 @@ export function Shell({ children }: { children: ReactNode }) {
             <small>{monthLabel(state.year, state.month)}</small>
           </div>
           <div className="who">
-            <span>Alex</span>
-            <Avatar name="Alex" color="#1f7a4d" />
+            <span className="who-name">{you?.name}</span>
+            <Avatar name={you?.name ?? "You"} color={you?.color ?? "#1f7a4d"} />
           </div>
         </header>
         <main className="content">{children}</main>

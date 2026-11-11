@@ -4,12 +4,23 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@homi/shared": "0.0.0"
+    "@homi/shared": "0.0.0",
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.2",
+    "pg": "^8.23.1"
   },
   "devDependencies": {
-    "typescript": "^5.6.3"
+    "@types/bcryptjs": "^2.4.6",
+    "@types/pg": "^8.23.1",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.19.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.6.3",
+    "vitest": "^3.2.4"
   }
 }

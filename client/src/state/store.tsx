@@ -5,17 +5,17 @@ import {
   reviewAmountChange,
   reviewPaymentAmount,
 } from "@homi/shared";
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CATEGORIES, createExpenses, createSettlements, createTasks } from "../data/mock";
 import { balancesFor, expensePaid, positionsFor } from "../lib/expenses";
 import { inputToBps, todayISO } from "../lib/format";
 import {
   ALEX_ID,
-  JORDAN_ID,
   MEMBERS,
   type Category,
   type Expense,
   type HouseholdState,
+  type Member,
   type ScreenName,
   type Settlement,
   type SplitMode,
@@ -57,6 +57,7 @@ export type SettlementDraft = {
 type StoredData = {
   version: 1;
   householdName: string;
+  members?: Member[];
   categories: Category[];
   expenses: Expense[];
   settlements: Settlement[];
@@ -67,9 +68,29 @@ type StoredData = {
   screen: ScreenName;
 };
 
+function defaultMembers(): Member[] {
+  return MEMBERS.map((member) => ({ ...member }));
+}
+
+function restoreMembers(saved: Member[] | undefined): Member[] {
+  if (!Array.isArray(saved) || saved.length === 0) return defaultMembers();
+  const restored = saved.flatMap((item) => {
+    const known = MEMBERS.find((member) => member.id === item.id);
+    if (!known) return [];
+    const name = typeof item.name === "string" ? item.name.trim() : "";
+    return [{ ...known, name: name || known.name }];
+  });
+  if (!restored.some((member) => member.id === ALEX_ID)) {
+    const viewer = MEMBERS.find((member) => member.id === ALEX_ID);
+    if (viewer) restored.unshift({ ...viewer });
+  }
+  return restored.length > 0 ? restored : defaultMembers();
+}
+
 function createInitialState(): HouseholdState {
   return {
     householdName: "Maple Street",
+    members: defaultMembers(),
     categories: CATEGORIES,
     expenses: createExpenses(),
     settlements: createSettlements(),
@@ -83,6 +104,7 @@ function createInitialState(): HouseholdState {
     settlementEditor: false,
     moreOpen: false,
     notice: null,
+    viewerId: ALEX_ID,
   };
 }
 
@@ -96,6 +118,7 @@ function loadState(): HouseholdState {
     return {
       ...initial,
       householdName: saved.householdName || initial.householdName,
+      members: restoreMembers(saved.members),
       categories: saved.categories.length > 0 ? saved.categories : initial.categories,
       expenses: saved.expenses,
       settlements: saved.settlements ?? initial.settlements,
@@ -114,6 +137,7 @@ function persist(state: HouseholdState) {
   const data: StoredData = {
     version: 1,
     householdName: state.householdName,
+    members: state.members,
     categories: state.categories,
     expenses: state.expenses,
     settlements: state.settlements,
@@ -141,17 +165,38 @@ function readAmount(value: string): { ok: true; agorot: number } | { ok: false; 
   }
 }
 
-function readSplit(draft: Pick<ExpenseDraft, "splitMode" | "alexPercent" | "jordanPercent">) {
-  if (draft.splitMode === "equal") {
+function equalBps(memberIds: readonly string[]) {
+  const ordered = [...memberIds].sort((left, right) => left.localeCompare(right));
+  const base = Math.floor(10000 / ordered.length);
+  let remainder = 10000 - base * ordered.length;
+  return ordered.map((memberId) => {
+    const shareBps = base + (remainder > 0 ? 1 : 0);
+    if (remainder > 0) remainder -= 1;
+    return { memberId, shareBps };
+  });
+}
+
+function readSplit(
+  draft: Pick<ExpenseDraft, "splitMode" | "alexPercent" | "jordanPercent">,
+  members: readonly Member[],
+  viewerId: string,
+) {
+  const ids = members.map((member) => member.id);
+  const viewer = ids.includes(viewerId) ? viewerId : ids[0];
+  if (!viewer) return { ok: false as const, error: "Add a household member first." };
+  const others = members.filter((member) => member.id !== viewer);
+  if (others.length === 0) {
     return {
       ok: true as const,
       splitMode: "equal" as const,
-      splitBps: [
-        { memberId: ALEX_ID, shareBps: 5000 },
-        { memberId: JORDAN_ID, shareBps: 5000 },
-      ],
+      splitBps: [{ memberId: viewer, shareBps: 10000 }],
     };
   }
+  if (draft.splitMode === "equal" || others.length !== 1) {
+    return { ok: true as const, splitMode: "equal" as const, splitBps: equalBps(ids) };
+  }
+  const other = others[0];
+  if (!other) return { ok: false as const, error: "Add a household member first." };
   const alex = inputToBps(draft.alexPercent);
   const jordan = inputToBps(draft.jordanPercent);
   if (alex === null || jordan === null) {
@@ -159,8 +204,8 @@ function readSplit(draft: Pick<ExpenseDraft, "splitMode" | "alexPercent" | "jord
   }
   try {
     percentageShares(10000, [
-      { memberId: ALEX_ID, shareBps: alex },
-      { memberId: JORDAN_ID, shareBps: jordan },
+      { memberId: viewer, shareBps: alex },
+      { memberId: other.id, shareBps: jordan },
     ]);
   } catch (error) {
     if (error instanceof MoneyError) return { ok: false as const, error: error.message };
@@ -170,8 +215,8 @@ function readSplit(draft: Pick<ExpenseDraft, "splitMode" | "alexPercent" | "jord
     ok: true as const,
     splitMode: alex === 5000 ? ("equal" as const) : ("percentage" as const),
     splitBps: [
-      { memberId: ALEX_ID, shareBps: alex },
-      { memberId: JORDAN_ID, shareBps: jordan },
+      { memberId: viewer, shareBps: alex },
+      { memberId: other.id, shareBps: jordan },
     ],
   };
 }
@@ -202,19 +247,143 @@ type StoreValue = {
   saveSettlement: (draft: SettlementDraft) => string | null;
   voidSettlement: (id: string) => void;
   renameHousehold: (name: string) => void;
+  renameMember: (id: string, name: string) => void;
+  deleteMember: (id: string) => string | null;
   addCategory: (name: string) => string | null;
+  deleteCategory: (id: string) => string | null;
   saveDefaultSplit: (alexPercent: string, jordanPercent: string) => string | null;
   reset: () => void;
+  youId: string;
 };
 
 const HouseholdContext = createContext<StoreValue | null>(null);
 
-export function HouseholdProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<HouseholdState>(loadState);
+export type SharedSlice = {
+  householdName: string;
+  categories: HouseholdState["categories"];
+  expenses: HouseholdState["expenses"];
+  settlements: HouseholdState["settlements"];
+  tasks: HouseholdState["tasks"];
+  defaultViewerBps: number;
+};
+
+export type RemoteHome = {
+  viewerId: string;
+  members: Member[];
+  householdName: string;
+  categories: HouseholdState["categories"];
+  expenses: HouseholdState["expenses"];
+  settlements: HouseholdState["settlements"];
+  tasks: HouseholdState["tasks"];
+  defaultViewerBps: number;
+  onSave: (slice: SharedSlice) => void | Promise<void>;
+};
+
+function sharedSlice(state: HouseholdState): SharedSlice {
+  return {
+    householdName: state.householdName,
+    categories: state.categories,
+    expenses: state.expenses,
+    settlements: state.settlements,
+    tasks: state.tasks,
+    defaultViewerBps: state.defaultAlexBps,
+  };
+}
+
+function remoteShared(remote: RemoteHome): SharedSlice {
+  return {
+    householdName: remote.householdName,
+    categories: remote.categories,
+    expenses: remote.expenses,
+    settlements: remote.settlements,
+    tasks: remote.tasks,
+    defaultViewerBps: remote.defaultViewerBps,
+  };
+}
+
+function sameRoster(current: Member[], next: Member[]): boolean {
+  return (
+    current.length === next.length &&
+    current.every((member, index) => {
+      const other = next[index];
+      return other !== undefined && member.id === other.id && member.name === other.name && member.role === other.role;
+    })
+  );
+}
+
+function stateFromRemote(remote: RemoteHome): HouseholdState {
+  const today = new Date();
+  return {
+    householdName: remote.householdName,
+    members: remote.members,
+    categories: remote.categories,
+    expenses: remote.expenses,
+    settlements: remote.settlements,
+    tasks: remote.tasks,
+    defaultAlexBps: remote.defaultViewerBps,
+    year: today.getFullYear(),
+    month: today.getMonth() + 1,
+    screen: "dashboard",
+    expenseEditor: null,
+    taskEditor: null,
+    settlementEditor: false,
+    moreOpen: false,
+    notice: null,
+    viewerId: remote.viewerId,
+  };
+}
+
+export function HouseholdProvider({ children, remote }: { children: ReactNode; remote?: RemoteHome }) {
+  const [state, setState] = useState<HouseholdState>(() => (remote ? stateFromRemote(remote) : loadState()));
+  const saveRef = useRef(remote?.onSave);
+  saveRef.current = remote?.onSave;
+  const savedSlice = useRef<string | null>(null);
 
   useEffect(() => {
+    if (saveRef.current) {
+      const body = JSON.stringify(sharedSlice(state));
+      if (savedSlice.current === null) {
+        savedSlice.current = body;
+        return;
+      }
+      if (body === savedSlice.current) return;
+      savedSlice.current = body;
+      void Promise.resolve(saveRef.current(JSON.parse(body) as SharedSlice)).catch(() => {
+        setState((current) => ({ ...current, notice: "The home could not be saved. Check that Homi is still running." }));
+      });
+      return;
+    }
     persist(state);
   }, [state]);
+
+  const rosterKey = remote?.members.map((member) => `${member.id}:${member.name}:${member.role}`).join("|") ?? "";
+  const remoteSliceKey = remote ? `${JSON.stringify(remoteShared(remote))}|${rosterKey}` : "";
+  const remoteRef = useRef(remote);
+  remoteRef.current = remote;
+  useEffect(() => {
+    const next = remoteRef.current;
+    if (!next) return;
+    const incoming = JSON.stringify(remoteShared(next));
+    setState((current) => {
+      const local = JSON.stringify(sharedSlice(current));
+      const sameMembers = sameRoster(current.members, next.members);
+      if (local === incoming && sameMembers) return current;
+      if (savedSlice.current !== null && local !== savedSlice.current) {
+        return sameMembers ? current : { ...current, members: next.members };
+      }
+      savedSlice.current = incoming;
+      return {
+        ...current,
+        householdName: next.householdName,
+        categories: next.categories,
+        expenses: next.expenses,
+        settlements: next.settlements,
+        tasks: next.tasks,
+        defaultAlexBps: next.defaultViewerBps,
+        members: next.members,
+      };
+    });
+  }, [remoteSliceKey]);
 
   useEffect(() => {
     if (!state.notice) return;
@@ -224,19 +393,20 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(timer);
   }, [state.notice]);
 
+  const memberKey = state.members.map((member) => member.id).join(",");
   const positions = useMemo(
-    () => positionsFor(state.expenses, state.year, state.month),
-    [state.expenses, state.year, state.month],
+    () => positionsFor(state.expenses, state.year, state.month, state.members.map((member) => member.id)),
+    [state.expenses, state.year, state.month, memberKey],
   );
   const outstanding = useMemo(
-    () => balancesFor(state.expenses, state.settlements),
-    [state.expenses, state.settlements],
+    () => balancesFor(state.expenses, state.settlements, state.members.map((member) => member.id)),
+    [state.expenses, state.settlements, memberKey],
   );
 
   const value = useMemo<StoreValue>(() => {
     return {
       state,
-      members: MEMBERS,
+      members: state.members,
       positions,
       outstanding,
       go: (screen) => setState((current) => ({ ...current, screen, moreOpen: false })),
@@ -263,7 +433,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
         if (!title) return "Give the expense a title.";
         const amount = readAmount(draft.amount);
         if (!amount.ok) return amount.error;
-        const split = readSplit(draft);
+        const split = readSplit(draft, state.members, state.viewerId);
         if (!split.ok) return split.error;
         const existing = draft.id
           ? state.expenses.find((expense) => expense.id === draft.id && !expense.deleted)
@@ -306,7 +476,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
             expense.id === id ? { ...expense, deleted: true } : expense,
           ),
         })),
-      markPaid: (id, memberId = ALEX_ID) =>
+      markPaid: (id, memberId = state.viewerId) =>
         setState((current) => {
           const expense = current.expenses.find((item) => item.id === id && !item.deleted);
           if (!expense) return current;
@@ -446,7 +616,11 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
         })),
       closeSettlement: () => setState((current) => ({ ...current, settlementEditor: false })),
       saveSettlement: (draft) => {
+        if (state.members.length < 2) return "Transfers need two people.";
         if (draft.fromMemberId === draft.toMemberId) return "Choose two different people.";
+        if (!state.members.some((member) => member.id === draft.fromMemberId) || !state.members.some((member) => member.id === draft.toMemberId)) {
+          return "Choose two people who are still in the household.";
+        }
         const amount = readAmount(draft.amount);
         if (!amount.ok) return amount.error;
         const settlement: Settlement = {
@@ -477,6 +651,43 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
           if (!trimmed) return current;
           return { ...current, householdName: trimmed };
         }),
+      renameMember: (id, name) =>
+        setState((current) => {
+          const trimmed = name.trim().slice(0, 40);
+          if (!trimmed || !current.members.some((member) => member.id === id)) return current;
+          return {
+            ...current,
+            members: current.members.map((member) => (member.id === id ? { ...member, name: trimmed } : member)),
+          };
+        }),
+      deleteMember: (id) => {
+        if (id === state.viewerId) return "The person using this home stays.";
+        const removed = state.members.find((member) => member.id === id);
+        if (!removed) return "That person is already gone.";
+        if (state.members.length <= 1) return "Keep at least one person.";
+        setState((current) => ({
+          ...current,
+          members: current.members.filter((member) => member.id !== id),
+          defaultAlexBps: 10000,
+          expenses: current.expenses.map((expense) => ({
+            ...expense,
+            splitMode: "equal",
+            splitBps: [{ memberId: state.viewerId, shareBps: 10000 }],
+            payments: expense.payments.map((payment) =>
+              payment.memberId === id ? { ...payment, memberId: state.viewerId } : payment,
+            ),
+          })),
+          settlements: current.settlements.map((settlement) =>
+            settlement.fromMemberId === id || settlement.toMemberId === id
+              ? { ...settlement, voided: true }
+              : settlement,
+          ),
+          tasks: current.tasks.map((task) =>
+            task.assignedMemberId === id ? { ...task, assignedMemberId: state.viewerId } : task,
+          ),
+        }));
+        return null;
+      },
       addCategory: (name) => {
         const trimmed = name.trim();
         if (!trimmed) return "Name the category.";
@@ -487,10 +698,29 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
         setState((current) => ({ ...current, categories: [...current.categories, category] }));
         return null;
       },
+      deleteCategory: (id) => {
+        const category = state.categories.find((item) => item.id === id);
+        if (!category) return "That category is already gone.";
+        if (state.categories.length <= 1) return "Keep at least one category.";
+        const fallback = state.categories.find((item) => item.id !== id && item.id === "other") ?? state.categories.find((item) => item.id !== id);
+        if (!fallback) return "Keep at least one category.";
+        setState((current) => ({
+          ...current,
+          categories: current.categories.filter((item) => item.id !== id),
+          expenses: current.expenses.map((expense) =>
+            expense.categoryId === id ? { ...expense, categoryId: fallback.id } : expense,
+          ),
+        }));
+        return null;
+      },
       saveDefaultSplit: (alexPercent, jordanPercent) => {
-        const split = readSplit({ splitMode: "percentage", alexPercent, jordanPercent });
+        if (state.members.length < 2) {
+          setState((current) => ({ ...current, defaultAlexBps: 10000 }));
+          return null;
+        }
+        const split = readSplit({ splitMode: "percentage", alexPercent, jordanPercent }, state.members, state.viewerId);
         if (!split.ok) return split.error;
-        const alex = split.splitBps.find((share) => share.memberId === ALEX_ID)?.shareBps ?? 5000;
+        const alex = split.splitBps.find((share) => share.memberId === state.viewerId)?.shareBps ?? 5000;
         setState((current) => ({ ...current, defaultAlexBps: alex }));
         return null;
       },
@@ -498,6 +728,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
         sessionStorage.removeItem(STORAGE_KEY);
         setState(createInitialState());
       },
+      youId: state.viewerId,
     };
   }, [outstanding, positions, state]);
 

@@ -81,6 +81,7 @@ export type TaskItem = {
 
 export type HouseholdState = {
   householdName: string;
+  members: Member[];
   categories: Category[];
   expenses: Expense[];
   settlements: Settlement[];
@@ -94,4 +95,5 @@ export type HouseholdState = {
   settlementEditor: boolean;
   moreOpen: boolean;
   notice: string | null;
+  viewerId: string;
 };

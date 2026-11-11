@@ -9,9 +9,13 @@
     "shared"
   ],
   "scripts": {
-    "dev": "npm run dev -w @homi/client",
-    "test": "npm test -w @homi/shared",
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/vercel-build.mjs",
+    "test": "npm test -w @homi/shared && npm test -w @homi/server",
     "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
   },
   "engines": {
     "node": ">=20"

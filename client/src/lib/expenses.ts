@@ -9,7 +9,7 @@ import {
   type OutstandingBalance,
   type PaymentStatus,
 } from "@homi/shared";
-import { MEMBER_IDS, type Expense, type Settlement } from "../types";
+import type { Expense, Settlement } from "../types";
 
 export function toLedgerExpense(expense: Expense): LedgerExpense {
   const shares = percentageShares(expense.amountAgorot, expense.splitBps);
@@ -65,23 +65,20 @@ export function positionsFor(
   expenses: readonly Expense[],
   year: number,
   month: number,
+  memberIds: readonly string[],
 ): MonthlyExpensePosition[] {
-  return monthlyExpensePositions(
-    expenses.map(toLedgerExpense),
-    year,
-    month,
-    MEMBER_IDS,
-  );
+  return monthlyExpensePositions(expenses.map(toLedgerExpense), year, month, memberIds);
 }
 
 export function balancesFor(
   expenses: readonly Expense[],
   settlements: readonly Settlement[],
+  memberIds: readonly string[],
 ): OutstandingBalance[] {
   return outstandingBalances(
     expenses.map(toLedgerExpense),
     settlements.map(toLedgerSettlement),
-    MEMBER_IDS,
+    memberIds,
   );
 }
 

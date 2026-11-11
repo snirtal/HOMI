@@ -1,21 +1,20 @@
 import { useEffect, useState } from "react";
-import { ALEX_ID, JORDAN_ID } from "../types";
 import { todayISO } from "../lib/format";
 import { useHousehold, type TaskDraft } from "../state/store";
-import { Button, Field, Sheet } from "../components/ui";
+import { Button, Field, MemberOptions, Sheet } from "../components/ui";
 
 export function TaskSheet() {
-  const { state, closeTask, saveTask, deleteTask } = useHousehold();
+  const { state, youId, closeTask, saveTask, deleteTask } = useHousehold();
   const existing =
     state.taskEditor && state.taskEditor !== "new"
       ? state.tasks.find((task) => task.id === state.taskEditor && !task.deleted)
       : undefined;
-  const [draft, setDraft] = useState<TaskDraft>(() => emptyDraft());
+  const [draft, setDraft] = useState<TaskDraft>(() => emptyDraft(youId));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!existing) {
-      setDraft(emptyDraft());
+      setDraft(emptyDraft(youId));
     } else {
       setDraft({
         id: existing.id,
@@ -47,8 +46,7 @@ export function TaskSheet() {
             value={draft.assignedMemberId}
             onChange={(event) => setDraft({ ...draft, assignedMemberId: event.target.value })}
           >
-            <option value={ALEX_ID}>Alex</option>
-            <option value={JORDAN_ID}>Jordan</option>
+            <MemberOptions />
           </select>
         </Field>
         <Field label="Due date">
@@ -71,6 +69,6 @@ export function TaskSheet() {
   );
 }
 
-function emptyDraft(): TaskDraft {
-  return { title: "", notes: "", assignedMemberId: ALEX_ID, dueDate: todayISO() };
+function emptyDraft(viewerId: string): TaskDraft {
+  return { title: "", notes: "", assignedMemberId: viewerId, dueDate: todayISO() };
 }

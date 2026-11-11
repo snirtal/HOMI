@@ -1,4 +1,5 @@
 node_modules/
+.vercel/
 dist/
 coverage/
 *.tsbuildinfo
@@ -7,3 +8,5 @@ coverage/
 !.env.example
 server/.env
 .DS_Store
+.vercel
+.env*

@@ -3,7 +3,7 @@ import { useHousehold } from "../state/store";
 import { memberName } from "../components/ui";
 
 export function Tasks() {
-  const { state, toggleTask, openTask } = useHousehold();
+  const { state, members, toggleTask, openTask } = useHousehold();
   const today = todayISO();
   const tasks = state.tasks.filter((task) => !task.deleted);
   const open = tasks.filter((task) => task.status === "open");
@@ -53,7 +53,7 @@ export function Tasks() {
       {featured ? (
         <article className="task-feature">
           <div className="feature-row">
-            <span className="eyebrow">{memberName(featured.assignedMemberId)}</span>
+            <span className="eyebrow">{memberName(members, featured.assignedMemberId)}</span>
             <span className="status overdue">Overdue</span>
           </div>
           <h2>{featured.title}</h2>
@@ -75,7 +75,7 @@ export function Tasks() {
             <button type="button" className="task-copy" onClick={() => openTask(task.id)}>
               <strong>{task.title}</strong>
               <span className={task.dueDate < today ? "muted late" : "muted"}>
-                {memberName(task.assignedMemberId)} · {task.dueDate < today ? "Overdue" : task.dueDate === today ? "Today" : formatDay(task.dueDate)}
+                {memberName(members, task.assignedMemberId)} · {task.dueDate < today ? "Overdue" : task.dueDate === today ? "Today" : formatDay(task.dueDate)}
               </span>
             </button>
           </article>
@@ -93,7 +93,7 @@ export function Tasks() {
             <button type="button" className="task-copy" onClick={() => openTask(task.id)}>
               <strong>{task.title}</strong>
               <span className="muted">
-                {memberName(task.assignedMemberId)}
+                {memberName(members, task.assignedMemberId)}
                 {task.completedAt ? ` · Done ${formatDay(task.completedAt)}` : ""}
               </span>
             </button>

@@ -1,12 +1,11 @@
-import { ALEX_ID } from "../types";
 import { monthFigures } from "../lib/expenses";
 import { money, monthLabel, monthShort, netLabel } from "../lib/format";
 import { useHousehold } from "../state/store";
 import { Donut, MonthColumns } from "../components/Charts";
-import { MonthSwitcher } from "../components/ui";
+import { MonthSwitcher, memberName } from "../components/ui";
 
 export function History() {
-  const { state, positions, shiftMonth } = useHousehold();
+  const { state, members, positions, shiftMonth } = useHousehold();
   const monthExpenses = state.expenses.filter(
     (expense) => !expense.deleted && expense.billingYear === state.year && expense.billingMonth === state.month,
   );
@@ -93,7 +92,7 @@ export function History() {
             <tbody>
               {positions.map((row) => (
                 <tr key={row.memberId}>
-                  <td>{row.memberId === ALEX_ID ? "Alex" : "Jordan"}</td>
+                  <td>{memberName(members, row.memberId)}</td>
                   <td>{money(row.paidAgorot)}</td>
                   <td>{money(row.shareOfPaidAgorot)}</td>
                   <td>{netLabel(row.netAgorot)}</td>

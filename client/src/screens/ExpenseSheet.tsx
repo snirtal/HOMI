@@ -1,13 +1,13 @@
 import { parseShekels, percentageShares } from "@homi/shared";
 import { useEffect, useState } from "react";
-import { ALEX_ID, JORDAN_ID } from "../types";
 import { expensePaid, expenseStatus } from "../lib/expenses";
 import { bpsToInput, formatDay, inputToBps, money, moneyPlain, monthName, todayISO } from "../lib/format";
 import { useHousehold, type ExpenseDraft } from "../state/store";
-import { Button, Field, Sheet, memberName } from "../components/ui";
+import { Button, Field, MemberOptions, Sheet, memberName } from "../components/ui";
 
 export function ExpenseSheet() {
-  const { state, closeExpense, saveExpense, deleteExpense, recordPayment, voidPayment, markPaid } = useHousehold();
+  const { state, members, youId, closeExpense, saveExpense, deleteExpense, recordPayment, voidPayment, markPaid } = useHousehold();
+  const other = members.find((member) => member.id !== youId);
   const existing =
     state.expenseEditor && state.expenseEditor !== "new"
       ? state.expenses.find((expense) => expense.id === state.expenseEditor && !expense.deleted)
@@ -16,7 +16,7 @@ export function ExpenseSheet() {
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [payAmount, setPayAmount] = useState("");
-  const [payerId, setPayerId] = useState(ALEX_ID);
+  const [payerId, setPayerId] = useState(youId);
   const [paidOn, setPaidOn] = useState(todayISO());
 
   useEffect(() => {
@@ -37,7 +37,7 @@ export function ExpenseSheet() {
 
   if (!state.expenseEditor) return null;
 
-  const preview = previewShares(draft);
+  const preview = previewShares(draft, youId, other?.id ?? null);
   const activePayments = existing?.payments.filter((payment) => !payment.voided) ?? [];
 
   return (
@@ -107,33 +107,37 @@ export function ExpenseSheet() {
           />
         </Field>
         <Field label="Split">
-          <div className="segment">
-            <button
-              type="button"
-              className={draft.splitMode === "equal" ? "chip active" : "chip"}
-              onClick={() => setDraft({ ...draft, splitMode: "equal", alexPercent: "50", jordanPercent: "50" })}
-            >
-              Equal
-            </button>
-            <button
-              type="button"
-              className={draft.splitMode === "percentage" ? "chip active" : "chip"}
-              onClick={() => setDraft({ ...draft, splitMode: "percentage" })}
-            >
-              Custom
-            </button>
-          </div>
+          {members.length < 2 ? (
+            <p className="muted">This bill belongs to {memberName(members, youId)}.</p>
+          ) : (
+            <div className="segment">
+              <button
+                type="button"
+                className={draft.splitMode === "equal" ? "chip active" : "chip"}
+                onClick={() => setDraft({ ...draft, splitMode: "equal", alexPercent: "50", jordanPercent: "50" })}
+              >
+                Equal
+              </button>
+              <button
+                type="button"
+                className={draft.splitMode === "percentage" ? "chip active" : "chip"}
+                onClick={() => setDraft({ ...draft, splitMode: "percentage" })}
+              >
+                Custom
+              </button>
+            </div>
+          )}
         </Field>
-        {draft.splitMode === "percentage" ? (
+        {members.length > 1 && draft.splitMode === "percentage" ? (
           <div className="form-grid two">
-            <Field label="Alex %">
+            <Field label={`${memberName(members, youId)} %`}>
               <input
                 inputMode="decimal"
                 value={draft.alexPercent}
                 onChange={(event) => setDraft({ ...draft, alexPercent: event.target.value })}
               />
             </Field>
-            <Field label="Jordan %">
+            <Field label={`${other ? memberName(members, other.id) : "Member"} %`}>
               <input
                 inputMode="decimal"
                 value={draft.jordanPercent}
@@ -142,7 +146,13 @@ export function ExpenseSheet() {
             </Field>
           </div>
         ) : null}
-        {preview ? <p className="split-preview">Alex {money(preview.alex)} · Jordan {money(preview.jordan)}</p> : null}
+        {preview ? (
+          <p className="split-preview">
+            {members.length < 2
+              ? `${memberName(members, youId)} ${money(preview.alex)}`
+              : `${memberName(members, youId)} ${money(preview.alex)} · ${other ? memberName(members, other.id) : "Member"} ${money(preview.jordan)}`}
+          </p>
+        ) : null}
         <Field label="Notes">
           <textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} />
         </Field>
@@ -177,7 +187,7 @@ export function ExpenseSheet() {
             {activePayments.map((payment) => (
               <li key={payment.id}>
                 <span>
-                  {memberName(payment.memberId)} · {money(payment.amountAgorot)} · {formatDay(payment.paidOn)}
+                  {memberName(members, payment.memberId)} · {money(payment.amountAgorot)} · {formatDay(payment.paidOn)}
                 </span>
                 <button type="button" className="text-action" onClick={() => voidPayment(existing.id, payment.id)}>
                   Void
@@ -193,8 +203,7 @@ export function ExpenseSheet() {
                 </Field>
                 <Field label="Paid by">
                   <select value={payerId} onChange={(event) => setPayerId(event.target.value)}>
-                    <option value={ALEX_ID}>Alex</option>
-                    <option value={JORDAN_ID}>Jordan</option>
+                    <MemberOptions />
                   </select>
                 </Field>
               </div>
@@ -247,8 +256,10 @@ function buildDraft(state: ReturnType<typeof useHousehold>["state"]): ExpenseDra
       jordanPercent: bpsToInput(10000 - alex),
     };
   }
-  const alex = existing.splitBps.find((share) => share.memberId === ALEX_ID)?.shareBps ?? 5000;
-  const jordan = existing.splitBps.find((share) => share.memberId === JORDAN_ID)?.shareBps ?? 5000;
+  const viewer = state.viewerId;
+  const otherId = state.members.find((member) => member.id !== viewer)?.id;
+  const alex = existing.splitBps.find((share) => share.memberId === viewer)?.shareBps ?? 5000;
+  const jordan = otherId ? existing.splitBps.find((share) => share.memberId === otherId)?.shareBps ?? 10000 - alex : 0;
   return {
     id: existing.id,
     title: existing.title,
@@ -264,20 +275,21 @@ function buildDraft(state: ReturnType<typeof useHousehold>["state"]): ExpenseDra
   };
 }
 
-function previewShares(draft: ExpenseDraft): { alex: number; jordan: number } | null {
+function previewShares(draft: ExpenseDraft, viewerId: string, otherId: string | null): { alex: number; jordan: number } | null {
   try {
     const amount = parseShekels(draft.amount);
     if (amount <= 0) return null;
+    if (!otherId) return { alex: amount, jordan: 0 };
     const alexBps = draft.splitMode === "equal" ? 5000 : inputToBps(draft.alexPercent);
     const jordanBps = draft.splitMode === "equal" ? 5000 : inputToBps(draft.jordanPercent);
     if (alexBps === null || jordanBps === null) return null;
     const shares = percentageShares(amount, [
-      { memberId: ALEX_ID, shareBps: alexBps },
-      { memberId: JORDAN_ID, shareBps: jordanBps },
+      { memberId: viewerId, shareBps: alexBps },
+      { memberId: otherId, shareBps: jordanBps },
     ]);
     return {
-      alex: shares.find((share) => share.memberId === ALEX_ID)?.shareAgorot ?? 0,
-      jordan: shares.find((share) => share.memberId === JORDAN_ID)?.shareAgorot ?? 0,
+      alex: shares.find((share) => share.memberId === viewerId)?.shareAgorot ?? 0,
+      jordan: shares.find((share) => share.memberId === otherId)?.shareAgorot ?? 0,
     };
   } catch {
     return null;
