@@ -104,6 +104,16 @@ export function IconClose(props: IconProps) {
   );
 }
 
+export function IconPlants(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path {...stroke} d="M12 21V10" />
+      <path {...stroke} d="M12 14c-4.5 0-6.5-2.2-7-5 2.8.2 5 .8 7 3.2" />
+      <path {...stroke} d="M12 12c3.8-.4 6-2.2 6.5-5.2-2.6.4-4.6 1.4-6.5 4" />
+    </Svg>
+  );
+}
+
 export function CategoryIcon({ id, size = 20 }: { id: string; size?: number }) {
   if (id === "electricity") {
     return (

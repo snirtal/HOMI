@@ -15,8 +15,10 @@ import type {
   JoinRequestRecord,
   MemberRecord,
   MemberRole,
+  PlantRecord,
   SessionRecord,
   UserRecord,
+  WateringRecord,
   Workspace,
 } from "./store.js";
 
@@ -39,6 +41,24 @@ type InvitationRow = {
   invited_by: string;
   expires_at: Date;
   revoked_at: Date | null;
+  created_at: Date;
+};
+type PlantRow = {
+  id: string;
+  household_id: string;
+  name: string;
+  interval_days: number;
+  photo: Buffer | string;
+  created_by: string;
+  created_at: Date;
+  deleted_at: Date | null;
+};
+type WateringRow = {
+  id: string;
+  plant_id: string;
+  household_id: string;
+  member_id: string;
+  watered_on: string;
   created_at: Date;
 };
 type RequestRow = {
@@ -66,11 +86,58 @@ export function createPostgresStore(connectionString: string): AppStore {
   return new PostgresStore(pool, pool);
 }
 
+const PLANT_SETUP = [
+  `CREATE TABLE IF NOT EXISTS plants (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    household_id uuid NOT NULL REFERENCES households (id) ON DELETE CASCADE,
+    name text NOT NULL,
+    interval_days integer NOT NULL,
+    photo bytea NOT NULL,
+    photo_content_type text NOT NULL DEFAULT 'image/jpeg',
+    created_by uuid NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    deleted_at timestamptz,
+    CONSTRAINT plants_name_present CHECK (length(btrim(name)) > 0),
+    CONSTRAINT plants_name_length CHECK (char_length(name) <= 80),
+    CONSTRAINT plants_interval_check CHECK (interval_days BETWEEN 1 AND 365),
+    CONSTRAINT plants_photo_type_check CHECK (photo_content_type = 'image/jpeg'),
+    CONSTRAINT plants_photo_size_check CHECK (octet_length(photo) BETWEEN 1 AND 409600)
+  )`,
+  `CREATE INDEX IF NOT EXISTS plants_household_idx
+    ON plants (household_id)
+    WHERE deleted_at IS NULL`,
+  `CREATE TABLE IF NOT EXISTS plant_waterings (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    plant_id uuid NOT NULL REFERENCES plants (id) ON DELETE CASCADE,
+    household_id uuid NOT NULL REFERENCES households (id) ON DELETE CASCADE,
+    member_id uuid NOT NULL REFERENCES household_members (id) ON DELETE RESTRICT,
+    watered_on date NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS plant_waterings_plant_idx
+    ON plant_waterings (plant_id, watered_on DESC, created_at DESC)`,
+];
+
 class PostgresStore implements AppStore {
+  private plantTables: Promise<void> | null = null;
+
   constructor(
     private readonly db: Db,
     private readonly pool: Pool | null,
   ) {}
+
+  private ensurePlantTables(): Promise<void> {
+    if (!this.plantTables) {
+      this.plantTables = (async () => {
+        for (const statement of PLANT_SETUP) await this.write(statement, []);
+      })().catch((error: unknown) => {
+        this.plantTables = null;
+        throw error;
+      });
+    }
+    return this.plantTables;
+  }
 
   transaction<T>(run: (store: AppStore) => Promise<T>): Promise<T> {
     if (!this.pool) return run(this);
@@ -583,6 +650,94 @@ class PostgresStore implements AppStore {
     );
   }
 
+  async listPlants(householdId: string): Promise<PlantRecord[]> {
+    await this.ensurePlantTables();
+    const rows = await this.rows<PlantRow>(
+      `SELECT id, household_id, name, interval_days, photo, created_by, created_at, deleted_at
+       FROM plants
+       WHERE household_id = $1 AND deleted_at IS NULL
+       ORDER BY created_at DESC`,
+      [householdId],
+    );
+    return rows.map(plantFrom);
+  }
+
+  async plantById(householdId: string, plantId: string): Promise<PlantRecord | undefined> {
+    await this.ensurePlantTables();
+    const rows = await this.rows<PlantRow>(
+      `SELECT id, household_id, name, interval_days, photo, created_by, created_at, deleted_at
+       FROM plants
+       WHERE household_id = $1 AND id = $2 AND deleted_at IS NULL`,
+      [householdId, plantId],
+    );
+    return rows[0] ? plantFrom(rows[0]) : undefined;
+  }
+
+  async insertPlant(plant: PlantRecord): Promise<void> {
+    await this.ensurePlantTables();
+    await this.write(
+      `INSERT INTO plants (id, household_id, name, interval_days, photo, photo_content_type, created_by, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'image/jpeg', $6, $7)`,
+      [plant.id, plant.householdId, plant.name, plant.intervalDays, plant.photo, plant.createdBy, plant.createdAt],
+    );
+  }
+
+  async updatePlant(
+    householdId: string,
+    plantId: string,
+    patch: { name: string; intervalDays: number; photo?: Buffer },
+  ): Promise<boolean> {
+    await this.ensurePlantTables();
+    const rows = await this.rows<{ id: string }>(
+      `UPDATE plants
+       SET name = $3, interval_days = $4, photo = COALESCE($5, photo), updated_at = now()
+       WHERE household_id = $1 AND id = $2 AND deleted_at IS NULL
+       RETURNING id`,
+      [householdId, plantId, patch.name, patch.intervalDays, patch.photo ?? null],
+    );
+    return rows.length > 0;
+  }
+
+  async deletePlant(householdId: string, plantId: string, at: string): Promise<boolean> {
+    await this.ensurePlantTables();
+    const rows = await this.rows<{ id: string }>(
+      `UPDATE plants
+       SET deleted_at = COALESCE(deleted_at, $3), updated_at = now()
+       WHERE household_id = $1 AND id = $2 AND deleted_at IS NULL
+       RETURNING id`,
+      [householdId, plantId, at],
+    );
+    return rows.length > 0;
+  }
+
+  async insertWatering(watering: WateringRecord): Promise<void> {
+    await this.ensurePlantTables();
+    await this.write(
+      `INSERT INTO plant_waterings (id, plant_id, household_id, member_id, watered_on, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [watering.id, watering.plantId, watering.householdId, watering.memberId, watering.wateredOn, watering.createdAt],
+    );
+  }
+
+  async listWaterings(householdId: string, plantId: string): Promise<WateringRecord[]> {
+    await this.ensurePlantTables();
+    const rows = await this.rows<WateringRow>(
+      `SELECT id, plant_id, household_id, member_id, watered_on::text AS watered_on, created_at
+       FROM plant_waterings
+       WHERE household_id = $1 AND plant_id = $2
+       ORDER BY watered_on DESC, created_at DESC`,
+      [householdId, plantId],
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      plantId: row.plant_id,
+      householdId: row.household_id,
+      memberId: row.member_id,
+      wateredOn: row.watered_on,
+      createdAt: iso(row.created_at),
+    }));
+  }
+
   private requestRows(where: string, values: unknown[]): Promise<RequestRow[]> {
     return this.rows<RequestRow>(
       `SELECT id, household_id, invitation_id, user_id, status, created_at, decided_at, decided_by
@@ -671,6 +826,25 @@ function invitationFrom(row: InvitationRow): InvitationRecord {
     expiresAt: iso(row.expires_at),
     revokedAt: row.revoked_at ? iso(row.revoked_at) : null,
     createdAt: iso(row.created_at),
+  };
+}
+
+function photoFrom(value: Buffer | string): Buffer {
+  if (Buffer.isBuffer(value)) return value;
+  if (value.startsWith("\\x")) return Buffer.from(value.slice(2), "hex");
+  return Buffer.from(value, "base64");
+}
+
+function plantFrom(row: PlantRow): PlantRecord {
+  return {
+    id: row.id,
+    householdId: row.household_id,
+    name: row.name,
+    intervalDays: row.interval_days,
+    photo: photoFrom(row.photo),
+    createdBy: row.created_by,
+    createdAt: iso(row.created_at),
+    deletedAt: row.deleted_at ? iso(row.deleted_at) : null,
   };
 }
 

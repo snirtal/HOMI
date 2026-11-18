@@ -13,6 +13,7 @@ export function MonthSwitcher({
   label: string;
   onPrevious: () => void;
   onNext: () => void;
+
 }) {
   return (
     <div className="month-switch">

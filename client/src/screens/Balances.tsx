@@ -1,5 +1,5 @@
 import { monthFigures } from "../lib/expenses";
-import { formatDay, money, monthLabel, netLabel, youBalance } from "../lib/format";
+import { formatDay, money, monthLabel, netLabel, netTone, youBalance } from "../lib/format";
 import { useHousehold } from "../state/store";
 import { Button, MonthSwitcher, memberName } from "../components/ui";
 
@@ -27,13 +27,6 @@ export function Balances() {
         {members.length > 1 ? <Button onClick={openSettlement}>Record settlement</Button> : null}
       </header>
 
-      <article className="card balance-hero">
-        <p className="eyebrow">Outstanding balance</p>
-        <p className={`hero-value ${balance.tone}`}>{balance.title}</p>
-        <p className="lede">{balance.detail}</p>
-        <p className="muted">All months, after settlements. This is the debt that is still open.</p>
-      </article>
-
       <div className="pair">
         <article className="card stat">
           <p className="eyebrow">{youName} paid</p>
@@ -41,9 +34,9 @@ export function Balances() {
           <p className="muted">Money sent to providers.</p>
         </article>
         <article className="card stat">
-          <p className="eyebrow">{youName}'s share</p>
-          <strong>{money(you?.shareOfPaidAgorot ?? 0)}</strong>
-          <p className="muted">Share of bills that were actually paid.</p>
+          <p className="eyebrow">{balance.detail}</p>
+          <strong className={balance.tone}>{balance.title}</strong>
+          <p className="muted">All months, after settlements.</p>
         </article>
       </div>
 
@@ -54,7 +47,6 @@ export function Balances() {
             <tr>
               <th>Member</th>
               <th>Paid</th>
-              <th>Share</th>
               <th>Sent</th>
               <th>Received</th>
               <th>Balance</th>
@@ -65,10 +57,9 @@ export function Balances() {
               <tr key={row.memberId}>
                 <td>{memberName(members, row.memberId)}</td>
                 <td>{money(row.paidAgorot)}</td>
-                <td>{money(row.shareOfPaidAgorot)}</td>
                 <td>{money(row.settlementsSentAgorot)}</td>
                 <td>{money(row.settlementsReceivedAgorot)}</td>
-                <td>{netLabel(row.netAgorot)}</td>
+                <td className={`net ${netTone(row.netAgorot)}`}>{netLabel(row.netAgorot)}</td>
               </tr>
             ))}
           </tbody>
@@ -95,7 +86,6 @@ export function Balances() {
               <tr>
                 <th>Member</th>
                 <th>Paid</th>
-                <th>Share</th>
                 <th>This month</th>
               </tr>
             </thead>
@@ -104,8 +94,7 @@ export function Balances() {
                 <tr key={row.memberId}>
                   <td>{memberName(members, row.memberId)}</td>
                   <td>{money(row.paidAgorot)}</td>
-                  <td>{money(row.shareOfPaidAgorot)}</td>
-                  <td>{netLabel(row.netAgorot)}</td>
+                  <td className={`net ${netTone(row.netAgorot)}`}>{netLabel(row.netAgorot)}</td>
                 </tr>
               ))}
             </tbody>

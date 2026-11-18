@@ -99,6 +99,12 @@ export function netLabel(net: number): string {
   return "Even";
 }
 
+export function netTone(net: number): "positive" | "negative" | "zero" {
+  if (net > 0) return "positive";
+  if (net < 0) return "negative";
+  return "zero";
+}
+
 export function youBalance(net: number, otherName: string): { title: string; detail: string; tone: "positive" | "negative" | "zero" } {
   if (net > 0) {
     return { title: money(net), detail: `${otherName} owes you`, tone: "positive" };

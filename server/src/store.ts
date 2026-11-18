@@ -63,6 +63,26 @@ export type JoinRequestRecord = {
   decidedBy: string | null;
 };
 
+export type PlantRecord = {
+  id: string;
+  householdId: string;
+  name: string;
+  intervalDays: number;
+  photo: Buffer;
+  createdBy: string;
+  createdAt: string;
+  deletedAt: string | null;
+};
+
+export type WateringRecord = {
+  id: string;
+  plantId: string;
+  householdId: string;
+  memberId: string;
+  wateredOn: string;
+  createdAt: string;
+};
+
 export class MemoryStore {
   readonly users = new Map<string, UserRecord>();
   readonly sessions = new Map<string, SessionRecord>();
@@ -70,6 +90,8 @@ export class MemoryStore {
   readonly members: MemberRecord[] = [];
   readonly invitations: InvitationRecord[] = [];
   readonly requests: JoinRequestRecord[] = [];
+  readonly plants: PlantRecord[] = [];
+  readonly waterings: WateringRecord[] = [];
 
   userByEmail(email: string): UserRecord | undefined {
     return [...this.users.values()].find((user) => user.email === email);
@@ -185,6 +207,52 @@ export class MemoryStore {
     household.workspace = { ...household.workspace, defaultViewerBps: bps };
   }
 
+  listPlants(householdId: string): PlantRecord[] {
+    return this.plants
+      .filter((plant) => plant.householdId === householdId && plant.deletedAt === null)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
+  plantById(householdId: string, plantId: string): PlantRecord | undefined {
+    return this.plants.find(
+      (plant) => plant.id === plantId && plant.householdId === householdId && plant.deletedAt === null,
+    );
+  }
+
+  insertPlant(plant: PlantRecord): void {
+    this.plants.push(plant);
+  }
+
+  updatePlant(
+    householdId: string,
+    plantId: string,
+    patch: { name: string; intervalDays: number; photo?: Buffer },
+  ): boolean {
+    const plant = this.plantById(householdId, plantId);
+    if (!plant) return false;
+    plant.name = patch.name;
+    plant.intervalDays = patch.intervalDays;
+    if (patch.photo) plant.photo = patch.photo;
+    return true;
+  }
+
+  deletePlant(householdId: string, plantId: string, at: string): boolean {
+    const plant = this.plantById(householdId, plantId);
+    if (!plant) return false;
+    plant.deletedAt = at;
+    return true;
+  }
+
+  insertWatering(watering: WateringRecord): void {
+    this.waterings.push(watering);
+  }
+
+  listWaterings(householdId: string, plantId: string): WateringRecord[] {
+    return this.waterings
+      .filter((watering) => watering.householdId === householdId && watering.plantId === plantId)
+      .sort((left, right) => right.wateredOn.localeCompare(left.wateredOn) || right.createdAt.localeCompare(left.createdAt));
+  }
+
   transaction<T>(run: (store: AppStore) => Promise<T>): Promise<T> {
     return run(this);
   }
@@ -217,5 +285,16 @@ export type AppStore = {
   markRequest(requestId: string, status: "approved" | "rejected", decidedBy: string, decidedAt: string): Maybe<void>;
   getDefaultViewerBps(householdId: string): Maybe<number>;
   setDefaultViewerBps(householdId: string, bps: number): Maybe<void>;
+  listPlants(householdId: string): Maybe<PlantRecord[]>;
+  plantById(householdId: string, plantId: string): Maybe<PlantRecord | undefined>;
+  insertPlant(plant: PlantRecord): Maybe<void>;
+  updatePlant(
+    householdId: string,
+    plantId: string,
+    patch: { name: string; intervalDays: number; photo?: Buffer },
+  ): Maybe<boolean>;
+  deletePlant(householdId: string, plantId: string, at: string): Maybe<boolean>;
+  insertWatering(watering: WateringRecord): Maybe<void>;
+  listWaterings(householdId: string, plantId: string): Maybe<WateringRecord[]>;
   transaction<T>(run: (store: AppStore) => Promise<T>): Promise<T>;
 };

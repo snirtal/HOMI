@@ -1,7 +1,10 @@
+import { useEffect, useState } from "react";
+import { api } from "../auth/api";
 import { activityDate, expenseStatus, monthFigures } from "../lib/expenses";
 import { formatDay, greeting, money, monthLabel, netLabel, todayISO, youBalance } from "../lib/format";
+import { needsWater, type Plant } from "../lib/plants";
 import { useHousehold } from "../state/store";
-import { IconBalances, IconPlus, IconTasks } from "../components/Icons";
+import { IconBalances, IconPlants, IconPlus, IconTasks } from "../components/Icons";
 import { ExpenseRow, MonthSwitcher, PaidBar, memberName } from "../components/ui";
 
 export function Dashboard() {
@@ -26,6 +29,23 @@ export function Dashboard() {
   const attentionLeft = attention
     ? attention.amountAgorot - attention.payments.filter((payment) => !payment.voided).reduce((sum, payment) => sum + payment.amountAgorot, 0)
     : 0;
+  const [plantsDue, setPlantsDue] = useState(0);
+
+  useEffect(() => {
+    let gone = false;
+    api<{ plants: Plant[] }>("/api/plants")
+      .then((body) => {
+        if (gone) return;
+        const day = todayISO();
+        setPlantsDue(body.plants.filter((plant) => needsWater(plant, day)).length);
+      })
+      .catch(() => {
+        if (!gone) setPlantsDue(0);
+      });
+    return () => {
+      gone = true;
+    };
+  }, []);
 
   return (
     <section className="screen dash">
@@ -39,6 +59,12 @@ export function Dashboard() {
           onPrevious={() => shiftMonth(-1)}
           onNext={() => shiftMonth(1)}
         />
+        {plantsDue > 0 ? (
+          <button type="button" className="plants-alert" onClick={() => go("plants")}>
+            <IconPlants size={18} />
+            <span>{plantsDue === 1 ? "1 plant needs water" : `${plantsDue} plants need water`}</span>
+          </button>
+        ) : null}
       </header>
 
       <article className="card hero block-hero">

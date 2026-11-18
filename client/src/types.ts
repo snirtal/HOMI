@@ -20,7 +20,8 @@ export type ScreenName =
   | "balances"
   | "tasks"
   | "history"
-  | "settings";
+  | "settings"
+  | "plants";
 
 export type Category = {
   id: string;

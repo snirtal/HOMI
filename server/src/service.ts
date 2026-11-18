@@ -6,6 +6,7 @@ import {
   type HouseholdRecord,
   type InvitationRecord,
   type MemberRecord,
+  type PlantRecord,
   type UserRecord,
   type Workspace,
 } from "./store.js";
@@ -33,6 +34,23 @@ export type SessionView = {
   workspace: Workspace | null;
   pendingRequest: { householdName: string } | null;
 };
+
+export type PlantView = {
+  id: string;
+  name: string;
+  intervalDays: number;
+  photo: string;
+  lastWateredOn: string | null;
+};
+
+export type WateringView = {
+  id: string;
+  wateredOn: string;
+  memberId: string;
+  memberName: string;
+};
+
+const MAX_PLANT_PHOTO = 400 * 1024;
 
 export type InvitationView = {
   id: string;
@@ -113,6 +131,17 @@ export function createService(
       });
     }
     return views;
+  }
+
+  async function requireMember(userId: string): Promise<MemberRecord> {
+    const member = await store.activeMemberForUser(userId);
+    if (!member) throw new ApiError(404, "That home is not available.");
+    return member;
+  }
+
+  async function latestWateredOn(householdId: string, plantId: string): Promise<string | null> {
+    const waterings = await store.listWaterings(householdId, plantId);
+    return waterings[0]?.wateredOn ?? null;
   }
 
   async function requireOwner(userId: string): Promise<{ member: MemberRecord; household: HouseholdRecord }> {
@@ -336,6 +365,90 @@ export function createService(
       return decide(userId, requestId, "rejected");
     },
 
+    async listPlants(userId: string): Promise<PlantView[]> {
+      const member = await requireMember(userId);
+      const plants = await store.listPlants(member.householdId);
+      const listed = [];
+      for (const plant of plants) {
+        listed.push(toPlantView(plant, await latestWateredOn(member.householdId, plant.id)));
+      }
+      return listed;
+    },
+
+    async createPlant(userId: string, input: { name?: unknown; intervalDays?: unknown; photo?: unknown }): Promise<PlantView> {
+      const member = await requireMember(userId);
+      const photo = readPhoto(input.photo, true);
+      if (!photo) throw new ApiError(400, "Add a photo of the plant.");
+      const plant: PlantRecord = {
+        id: crypto.randomUUID(),
+        householdId: member.householdId,
+        name: readPlantName(input.name),
+        intervalDays: readInterval(input.intervalDays),
+        photo,
+        createdBy: userId,
+        createdAt: now().toISOString(),
+        deletedAt: null,
+      };
+      await store.insertPlant(plant);
+      return toPlantView(plant, null);
+    },
+
+    async updatePlant(
+      userId: string,
+      plantId: string,
+      input: { name?: unknown; intervalDays?: unknown; photo?: unknown },
+    ): Promise<PlantView> {
+      const member = await requireMember(userId);
+      const existing = await store.plantById(member.householdId, plantId);
+      if (!existing) throw new ApiError(404, "That plant is not available.");
+      const photo = readPhoto(input.photo, false);
+      const updated = await store.updatePlant(member.householdId, plantId, {
+        name: readPlantName(input.name),
+        intervalDays: readInterval(input.intervalDays),
+        photo,
+      });
+      if (!updated) throw new ApiError(404, "That plant is not available.");
+      const plant = await store.plantById(member.householdId, plantId);
+      if (!plant) throw new ApiError(404, "That plant is not available.");
+      return toPlantView(plant, await latestWateredOn(member.householdId, plantId));
+    },
+
+    async deletePlant(userId: string, plantId: string): Promise<void> {
+      const member = await requireMember(userId);
+      const deleted = await store.deletePlant(member.householdId, plantId, now().toISOString());
+      if (!deleted) throw new ApiError(404, "That plant is not available.");
+    },
+
+    async waterPlant(userId: string, plantId: string): Promise<PlantView> {
+      const member = await requireMember(userId);
+      const plant = await store.plantById(member.householdId, plantId);
+      if (!plant) throw new ApiError(404, "That plant is not available.");
+      const wateredOn = calendarDate(now());
+      await store.insertWatering({
+        id: crypto.randomUUID(),
+        plantId: plant.id,
+        householdId: member.householdId,
+        memberId: member.id,
+        wateredOn,
+        createdAt: now().toISOString(),
+      });
+      return toPlantView(plant, wateredOn);
+    },
+
+    async listWaterings(userId: string, plantId: string): Promise<WateringView[]> {
+      const member = await requireMember(userId);
+      const plant = await store.plantById(member.householdId, plantId);
+      if (!plant) throw new ApiError(404, "That plant is not available.");
+      const waterings = await store.listWaterings(member.householdId, plantId);
+      const members = await memberViews(member.householdId);
+      return waterings.map((watering) => ({
+        id: watering.id,
+        wateredOn: watering.wateredOn,
+        memberId: watering.memberId,
+        memberName: members.find((person) => person.id === watering.memberId)?.name ?? "Member",
+      }));
+    },
+
     async saveWorkspace(userId: string, workspace: Workspace): Promise<Workspace> {
       const member = await store.activeMemberForUser(userId);
       if (!member) throw new ApiError(404, "That home is not available.");
@@ -347,6 +460,53 @@ export function createService(
       });
       return next;
     },
+  };
+}
+
+function calendarDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function readPlantName(input: unknown): string {
+  const name = typeof input === "string" ? input.trim() : "";
+  if (!name || name.length > 80) throw new ApiError(400, "Name the plant.");
+  return name;
+}
+
+function readInterval(input: unknown): number {
+  if (!Number.isInteger(input) || (input as number) < 1 || (input as number) > 365) {
+    throw new ApiError(400, "Enter how many days between waterings.");
+  }
+  return input as number;
+}
+
+function readPhoto(input: unknown, required: boolean): Buffer | undefined {
+  if (input === undefined || input === null || input === "") {
+    if (required) throw new ApiError(400, "Add a photo of the plant.");
+    return undefined;
+  }
+  if (typeof input !== "string") throw new ApiError(400, "Add a photo of the plant.");
+  const trimmed = input.trim();
+  if (trimmed.startsWith("data:") && !trimmed.startsWith("data:image/jpeg")) {
+    throw new ApiError(400, "Use a JPEG photo.");
+  }
+  const payload = trimmed.includes(",") ? trimmed.slice(trimmed.indexOf(",") + 1) : trimmed;
+  const bytes = Buffer.from(payload.replace(/\s/g, ""), "base64");
+  if (bytes.length === 0 || bytes.length > MAX_PLANT_PHOTO) throw new ApiError(400, "That photo is too large.");
+  if (bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) throw new ApiError(400, "Use a JPEG photo.");
+  return bytes;
+}
+
+function toPlantView(plant: PlantRecord, lastWateredOn: string | null): PlantView {
+  return {
+    id: plant.id,
+    name: plant.name,
+    intervalDays: plant.intervalDays,
+    photo: `data:image/jpeg;base64,${plant.photo.toString("base64")}`,
+    lastWateredOn,
   };
 }
 

@@ -6,6 +6,7 @@ import { Dashboard } from "./screens/Dashboard";
 import { ExpenseSheet } from "./screens/ExpenseSheet";
 import { Expenses } from "./screens/Expenses";
 import { History } from "./screens/History";
+import { Plants } from "./screens/Plants";
 import { Settings } from "./screens/Settings";
 import { SettlementSheet } from "./screens/SettlementSheet";
 import { TaskSheet } from "./screens/TaskSheet";
@@ -147,6 +148,7 @@ function Prototype({
       tasks: "Tasks",
       history: "History",
       settings: "Settings",
+      plants: "Plants",
     };
     document.title = `Homi · ${titles[state.screen]}`;
   }, [state.screen]);
@@ -167,6 +169,7 @@ function Prototype({
         {state.screen === "tasks" && <Tasks />}
         {state.screen === "history" && <History />}
         {state.screen === "settings" && <Settings role={role} onLogout={onLogout} onRefresh={onRefresh} />}
+        {state.screen === "plants" && <Plants />}
       </Shell>
       <ExpenseSheet />
       <TaskSheet />

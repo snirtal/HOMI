@@ -146,6 +146,81 @@ describe("invitation approval", () => {
   });
 });
 
+describe("plants", () => {
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0x00]).toString("base64");
+
+  function localDate(iso: string): string {
+    const date = new Date(iso);
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${date.getFullYear()}-${month}-${day}`;
+  }
+
+  it("records a separate watering schedule and who watered the plant", async () => {
+    const { service, store } = serviceAt();
+    const owner = await service.signup({ firstName: "Alex", email: "alex@home.test", password: "correct-horse" });
+    await expect(service.listPlants(owner.view.user.id)).rejects.toThrow(/not available/i);
+    await service.createHousehold(owner.view.user.id, "Maple Street");
+
+    const created = await service.createPlant(owner.view.user.id, { name: " Fern ", intervalDays: 7, photo: jpeg });
+    expect(created.name).toBe("Fern");
+    expect(created.intervalDays).toBe(7);
+    expect(created.lastWateredOn).toBeNull();
+    expect(created.photo.startsWith("data:image/jpeg;base64,")).toBe(true);
+
+    const edited = await service.updatePlant(owner.view.user.id, created.id, { name: "Fern", intervalDays: 3 });
+    expect(edited.intervalDays).toBe(3);
+    expect(edited.lastWateredOn).toBeNull();
+
+    const watered = await service.waterPlant(owner.view.user.id, created.id);
+    const today = localDate("2026-11-11T10:00:00.000Z");
+    expect(watered.lastWateredOn).toBe(today);
+    const again = await service.waterPlant(owner.view.user.id, created.id);
+    expect(again.lastWateredOn).toBe(today);
+
+    const invite = await service.createInvitation(owner.view.user.id);
+    const guest = await service.signup({ firstName: "Jordan", email: "jordan@home.test", password: "correct-horse" });
+    await service.requestToJoin(guest.view.user.id, invite.token);
+    const pending = (await service.listRequests(owner.view.user.id))[0];
+    if (!pending) throw new Error("missing request");
+    await service.approveRequest(owner.view.user.id, pending.id);
+    const byGuest = await service.waterPlant(guest.view.user.id, created.id);
+    expect(byGuest.lastWateredOn).toBe(today);
+    const history = await service.listWaterings(owner.view.user.id, created.id);
+    expect(history.filter((entry) => entry.memberName === "Jordan")).toHaveLength(1);
+    expect(history.filter((entry) => entry.memberName === "Alex")).toHaveLength(2);
+    expect(history.every((entry) => entry.wateredOn === today)).toBe(true);
+
+    const stranger = await service.signup({ firstName: "Sam", email: "sam@home.test", password: "correct-horse" });
+    await service.createHousehold(stranger.view.user.id, "Other Street");
+    expect(await service.listPlants(stranger.view.user.id)).toEqual([]);
+    await expect(service.updatePlant(stranger.view.user.id, created.id, { name: "Fern", intervalDays: 3 })).rejects.toThrow(/not available/i);
+    await expect(service.listWaterings(stranger.view.user.id, created.id)).rejects.toThrow(/not available/i);
+    await expect(service.waterPlant(stranger.view.user.id, created.id)).rejects.toThrow(/not available/i);
+
+    await service.deletePlant(owner.view.user.id, created.id);
+    expect(await service.listPlants(owner.view.user.id)).toEqual([]);
+    expect(store.plants[0]?.deletedAt).toBeTruthy();
+    expect(store.waterings).toHaveLength(3);
+    await expect(service.waterPlant(guest.view.user.id, created.id)).rejects.toThrow(/not available/i);
+    await expect(service.listWaterings(guest.view.user.id, created.id)).rejects.toThrow(/not available/i);
+  });
+
+  it("rejects a missing photo, a non-jpeg, an oversized photo, and a bad interval", async () => {
+    const { service } = serviceAt();
+    const owner = await service.signup({ firstName: "Alex", email: "alex@home.test", password: "correct-horse" });
+    await service.createHousehold(owner.view.user.id, "Maple Street");
+    await expect(service.createPlant(owner.view.user.id, { name: "Fern", intervalDays: 7 })).rejects.toThrow(/photo/i);
+    await expect(service.createPlant(owner.view.user.id, { name: "Fern", intervalDays: 7, photo: Buffer.from("hello").toString("base64") })).rejects.toThrow(/jpeg/i);
+    await expect(service.createPlant(owner.view.user.id, { name: "Fern", intervalDays: 0, photo: jpeg })).rejects.toThrow(/days/i);
+    const huge = Buffer.alloc(401 * 1024);
+    huge[0] = 0xff;
+    huge[1] = 0xd8;
+    huge[2] = 0xff;
+    await expect(service.createPlant(owner.view.user.id, { name: "Fern", intervalDays: 7, photo: huge.toString("base64") })).rejects.toThrow(/too large/i);
+  });
+});
+
 describe("http sessions", () => {
   const servers: Server[] = [];
 

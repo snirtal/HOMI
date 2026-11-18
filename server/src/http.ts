@@ -111,11 +111,49 @@ export function createApp(service: ReturnType<typeof createService>) {
     res.json({ ok: true });
   }));
 
+  app.get("/api/plants", catchAsync(async (req, res) => {
+    const session = await view(req);
+    res.json({ plants: await service.listPlants(session.user.id) });
+  }));
+
+  app.post("/api/plants", catchAsync(async (req, res) => {
+    const session = await view(req);
+    res.status(201).json({ plant: await service.createPlant(session.user.id, req.body ?? {}) });
+  }));
+
+  app.put("/api/plants/:id", catchAsync(async (req, res) => {
+    const session = await view(req);
+    res.json({ plant: await service.updatePlant(session.user.id, String(req.params.id), req.body ?? {}) });
+  }));
+
+  app.delete("/api/plants/:id", catchAsync(async (req, res) => {
+    const session = await view(req);
+    await service.deletePlant(session.user.id, String(req.params.id));
+    res.json({ ok: true });
+  }));
+
+  app.post("/api/plants/:id/water", catchAsync(async (req, res) => {
+    const session = await view(req);
+    res.json({ plant: await service.waterPlant(session.user.id, String(req.params.id)) });
+  }));
+
+  app.get("/api/plants/:id/waterings", catchAsync(async (req, res) => {
+    const session = await view(req);
+    res.json({ waterings: await service.listWaterings(session.user.id, String(req.params.id)) });
+  }));
+
   const onError: ErrorRequestHandler = (error, _req, res, _next) => {
     if (error instanceof ApiError) {
       res.status(error.status).json({ error: error.message });
       return;
     }
+    const status = typeof error === "object" && error && "status" in error ? Number(error.status) : 0;
+    if (status === 413) {
+      res.status(400).json({ error: "That photo is too large." });
+      return;
+    }
+    const message = error instanceof Error ? error.message : "";
+    if (message && !/postgres(ql)?:\/\//i.test(message)) console.error(message);
     res.status(500).json({ error: "Something went wrong." });
   };
   app.use(onError);

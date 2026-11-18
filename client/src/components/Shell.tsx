@@ -6,6 +6,7 @@ import {
   IconExpenses,
   IconHistory,
   IconHome,
+  IconPlants,
   IconSettings,
   IconTasks,
 } from "./Icons";
@@ -18,12 +19,13 @@ const NAV = [
   { id: "tasks", label: "Tasks", icon: IconTasks },
   { id: "history", label: "History", icon: IconHistory },
   { id: "settings", label: "Settings", icon: IconSettings },
+  { id: "plants", label: "Plants", icon: IconPlants },
 ] as const;
 
 export function Shell({ children }: { children: ReactNode }) {
   const { state, members, youId, go, setMoreOpen } = useHousehold();
   const you = members.find((member) => member.id === youId) ?? members[0];
-  const moreActive = state.screen === "history" || state.screen === "settings";
+  const moreActive = state.screen === "history" || state.screen === "settings" || state.screen === "plants";
 
   return (
     <>
@@ -114,6 +116,9 @@ export function Shell({ children }: { children: ReactNode }) {
       </nav>
       {state.moreOpen ? (
         <div className="more-menu">
+          <button type="button" onClick={() => go("plants")}>
+            <IconPlants size={18} /> Plants
+          </button>
           <button type="button" onClick={() => go("history")}>
             <IconHistory size={18} /> History
           </button>

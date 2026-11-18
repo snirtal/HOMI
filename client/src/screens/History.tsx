@@ -1,5 +1,5 @@
 import { monthFigures } from "../lib/expenses";
-import { money, monthLabel, monthShort, netLabel } from "../lib/format";
+import { money, monthLabel, monthShort, netLabel, netTone } from "../lib/format";
 import { useHousehold } from "../state/store";
 import { Donut, MonthColumns } from "../components/Charts";
 import { MonthSwitcher, memberName } from "../components/ui";
@@ -78,14 +78,13 @@ export function History() {
 
       <article className="card">
         <h2>By person</h2>
-        <p className="muted">Share of money already paid in {monthLabel(state.year, state.month)}. Settlements stay on Balances.</p>
+        <p className="muted">Who paid and who owes for {monthLabel(state.year, state.month)}. Settlements stay on Balances.</p>
         <div className="table-wrap">
           <table className="data-table">
             <thead>
               <tr>
                 <th>Member</th>
                 <th>Paid</th>
-                <th>Share</th>
                 <th>Month position</th>
               </tr>
             </thead>
@@ -94,8 +93,7 @@ export function History() {
                 <tr key={row.memberId}>
                   <td>{memberName(members, row.memberId)}</td>
                   <td>{money(row.paidAgorot)}</td>
-                  <td>{money(row.shareOfPaidAgorot)}</td>
-                  <td>{netLabel(row.netAgorot)}</td>
+                  <td className={`net ${netTone(row.netAgorot)}`}>{netLabel(row.netAgorot)}</td>
                 </tr>
               ))}
             </tbody>
