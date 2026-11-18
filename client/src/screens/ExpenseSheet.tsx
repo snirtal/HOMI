@@ -1,5 +1,5 @@
 import { parseShekels, percentageShares } from "@homi/shared";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { expensePaid, expenseStatus } from "../lib/expenses";
 import { bpsToInput, formatDay, inputToBps, money, moneyPlain, monthName, todayISO } from "../lib/format";
 import { useHousehold, type ExpenseDraft } from "../state/store";
@@ -18,8 +18,10 @@ export function ExpenseSheet() {
   const [payAmount, setPayAmount] = useState("");
   const [payerId, setPayerId] = useState(youId);
   const [paidOn, setPaidOn] = useState(todayISO());
+  const submitting = useRef(false);
 
   useEffect(() => {
+    submitting.current = false;
     setDraft(buildDraft(state));
     setError(null);
     setConfirmDelete(false);
@@ -33,7 +35,7 @@ export function ExpenseSheet() {
     } else {
       setPayAmount("");
     }
-  }, [state.expenseEditor, state.defaultAlexBps]);
+  }, [state.expenseEditor, state.expensePrefill, state.defaultAlexBps]);
 
   if (!state.expenseEditor) return null;
 
@@ -46,9 +48,25 @@ export function ExpenseSheet() {
         className="form-grid"
         onSubmit={(event) => {
           event.preventDefault();
-          setError(saveExpense(draft));
+          if (submitting.current) return;
+          if (!draft.categoryId) {
+            setError("Choose a category.");
+            return;
+          }
+          submitting.current = true;
+          const message = saveExpense(draft);
+          if (message) {
+            submitting.current = false;
+            setError(message);
+          }
         }}
       >
+        {state.expensePrefill && !existing ? (
+          <p className="muted">
+            Imported from Apple Pay. You can edit it before saving.
+            {state.expensePrefill.amountInvalid ? " Check the amount." : ""}
+          </p>
+        ) : null}
         <Field label="Title">
           <input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
         </Field>
@@ -65,6 +83,11 @@ export function ExpenseSheet() {
               value={draft.categoryId}
               onChange={(event) => setDraft({ ...draft, categoryId: event.target.value })}
             >
+              {draft.categoryId === "" ? (
+                <option value="" disabled>
+                  Choose a category
+                </option>
+              ) : null}
               {state.categories.map((category) => (
                 <option key={category.id} value={category.id}>
                   {category.name}
@@ -243,10 +266,11 @@ function buildDraft(state: ReturnType<typeof useHousehold>["state"]): ExpenseDra
       : undefined;
   if (!existing) {
     const alex = state.defaultAlexBps;
+    const prefill = state.expensePrefill;
     return {
-      title: "",
-      categoryId: state.categories[0]?.id ?? "groceries",
-      amount: "",
+      title: prefill ? prefill.title : "",
+      categoryId: prefill ? "" : (state.categories[0]?.id ?? "groceries"),
+      amount: prefill ? prefill.amount : "",
       billingYear: state.year,
       billingMonth: state.month,
       dueDate: "",

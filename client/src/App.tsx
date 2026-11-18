@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { parseShortcutImport, type ShortcutImport } from "@homi/shared";
+import { useEffect, useRef, useState } from "react";
 import { Shell } from "./components/Shell";
 import { HouseholdProvider, useHousehold, type RemoteHome, type SharedSlice } from "./state/store";
+import type { ExpensePrefill } from "./types";
 import { Balances } from "./screens/Balances";
 import { Dashboard } from "./screens/Dashboard";
 import { ExpenseSheet } from "./screens/ExpenseSheet";
@@ -14,7 +16,13 @@ import { Tasks } from "./screens/Tasks";
 import { api, loadSession, type AccountSession } from "./auth/api";
 import { AuthScreen, CreateHome, JoinRequest } from "./auth/screens";
 
+const PENDING_IMPORT_KEY = "homi.pendingExpenseImport";
+const RECENT_IMPORT_KEY = "homi.recentExpenseImport";
+const IMPORT_DEDUPE_MS = 60_000;
+let shortcutImportCaptured = false;
+
 export function App() {
+  captureShortcutImport();
   const [session, setSession] = useState<AccountSession | null | undefined>(undefined);
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [path, setPath] = useState(window.location.pathname);
@@ -138,7 +146,24 @@ function Prototype({
   onLogout: () => void;
   onRefresh: () => Promise<void>;
 }) {
-  const { state } = useHousehold();
+  const { state, openExpense } = useHousehold();
+  const openExpenseRef = useRef(openExpense);
+  openExpenseRef.current = openExpense;
+
+  useEffect(() => {
+    let active = true;
+    const prefill = readPendingImport();
+    if (!prefill) return;
+    const timer = window.setTimeout(() => {
+      if (!active) return;
+      sessionStorage.removeItem(PENDING_IMPORT_KEY);
+      openExpenseRef.current(null, prefill);
+    }, 0);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, []);
 
   useEffect(() => {
     const titles: Record<typeof state.screen, string> = {
@@ -181,6 +206,64 @@ function Prototype({
       ) : null}
     </div>
   );
+}
+
+function captureShortcutImport(): void {
+  if (shortcutImportCaptured) return;
+  shortcutImportCaptured = true;
+  const parsed = parseShortcutImport(window.location.search);
+  if (!parsed) return;
+  stripImportParams();
+  try {
+    const now = Date.now();
+    const recentRaw = sessionStorage.getItem(RECENT_IMPORT_KEY);
+    if (recentRaw) {
+      const recent = JSON.parse(recentRaw) as { fingerprint?: unknown; at?: unknown };
+      if (
+        recent.fingerprint === parsed.fingerprint &&
+        typeof recent.at === "number" &&
+        now - recent.at < IMPORT_DEDUPE_MS
+      ) {
+        return;
+      }
+    }
+    sessionStorage.setItem(RECENT_IMPORT_KEY, JSON.stringify({ fingerprint: parsed.fingerprint, at: now }));
+    sessionStorage.setItem(PENDING_IMPORT_KEY, JSON.stringify(parsed));
+  } catch {
+    // The form still works when opened by hand. A blocked sessionStorage just skips the import.
+  }
+}
+
+function stripImportParams(): void {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("addExpense");
+  url.searchParams.delete("amount");
+  url.searchParams.delete("merchant");
+  const search = url.searchParams.toString();
+  window.history.replaceState(window.history.state, "", `${url.pathname}${search ? `?${search}` : ""}${url.hash}`);
+}
+
+function readPendingImport(): ExpensePrefill | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_IMPORT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<ShortcutImport>;
+    if (typeof parsed.title !== "string" || typeof parsed.amount !== "string") {
+      sessionStorage.removeItem(PENDING_IMPORT_KEY);
+      return null;
+    }
+    if (parsed.amount !== "" && !/^\d+(\.\d{1,2})?$/.test(parsed.amount)) {
+      sessionStorage.removeItem(PENDING_IMPORT_KEY);
+      return null;
+    }
+    return {
+      title: [...parsed.title].slice(0, 80).join(""),
+      amount: parsed.amount,
+      amountInvalid: Boolean(parsed.amountInvalid),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function inviteToken(path: string): string | null {

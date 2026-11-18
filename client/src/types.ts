@@ -80,6 +80,12 @@ export type TaskItem = {
   deleted?: boolean;
 };
 
+export type ExpensePrefill = {
+  title: string;
+  amount: string;
+  amountInvalid: boolean;
+};
+
 export type HouseholdState = {
   householdName: string;
   members: Member[];
@@ -92,6 +98,7 @@ export type HouseholdState = {
   month: number;
   screen: ScreenName;
   expenseEditor: string | null;
+  expensePrefill: ExpensePrefill | null;
   taskEditor: string | null;
   settlementEditor: boolean;
   moreOpen: boolean;

@@ -1,5 +1,7 @@
 export { DEFAULT_EXPENSE_CATEGORIES } from "./categories.js";
 export { MoneyError, formatShekels, parseShekels } from "./money.js";
+export { parseShortcutImport } from "./shortcutImport.js";
+export type { ShortcutImport } from "./shortcutImport.js";
 export {
   SPLIT_BASIS_POINTS,
   activePaymentsTotal,

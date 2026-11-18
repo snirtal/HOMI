@@ -14,6 +14,7 @@ import {
   MEMBERS,
   type Category,
   type Expense,
+  type ExpensePrefill,
   type HouseholdState,
   type Member,
   type ScreenName,
@@ -100,6 +101,7 @@ function createInitialState(): HouseholdState {
     month: 11,
     screen: "dashboard",
     expenseEditor: null,
+    expensePrefill: null,
     taskEditor: null,
     settlementEditor: false,
     moreOpen: false,
@@ -229,7 +231,7 @@ type StoreValue = {
   go: (screen: ScreenName) => void;
   shiftMonth: (delta: number) => void;
   setMoreOpen: (open: boolean) => void;
-  openExpense: (id: string | null) => void;
+  openExpense: (id: string | null, prefill?: ExpensePrefill | null) => void;
   closeExpense: () => void;
   saveExpense: (draft: ExpenseDraft) => string | null;
   deleteExpense: (id: string) => void;
@@ -325,6 +327,7 @@ function stateFromRemote(remote: RemoteHome): HouseholdState {
     month: today.getMonth() + 1,
     screen: "dashboard",
     expenseEditor: null,
+    expensePrefill: null,
     taskEditor: null,
     settlementEditor: false,
     moreOpen: false,
@@ -419,15 +422,16 @@ export function HouseholdProvider({ children, remote }: { children: ReactNode; r
           return { ...current, year, month };
         }),
       setMoreOpen: (moreOpen) => setState((current) => ({ ...current, moreOpen })),
-      openExpense: (id) =>
+      openExpense: (id, prefill = null) =>
         setState((current) => ({
           ...current,
           expenseEditor: id ?? "new",
+          expensePrefill: id ? null : prefill,
           taskEditor: null,
           settlementEditor: false,
           moreOpen: false,
         })),
-      closeExpense: () => setState((current) => ({ ...current, expenseEditor: null })),
+      closeExpense: () => setState((current) => ({ ...current, expenseEditor: null, expensePrefill: null })),
       saveExpense: (draft) => {
         const title = draft.title.trim();
         if (!title) return "Give the expense a title.";
@@ -462,6 +466,7 @@ export function HouseholdProvider({ children, remote }: { children: ReactNode; r
         setState((current) => ({
           ...current,
           expenseEditor: null,
+          expensePrefill: null,
           expenses: existing
             ? current.expenses.map((expense) => (expense.id === existing.id ? next : expense))
             : [next, ...current.expenses],
@@ -472,6 +477,7 @@ export function HouseholdProvider({ children, remote }: { children: ReactNode; r
         setState((current) => ({
           ...current,
           expenseEditor: null,
+          expensePrefill: null,
           expenses: current.expenses.map((expense) =>
             expense.id === id ? { ...expense, deleted: true } : expense,
           ),
@@ -565,6 +571,7 @@ export function HouseholdProvider({ children, remote }: { children: ReactNode; r
           ...current,
           taskEditor: id ?? "new",
           expenseEditor: null,
+          expensePrefill: null,
           settlementEditor: false,
           moreOpen: false,
         })),
@@ -612,6 +619,7 @@ export function HouseholdProvider({ children, remote }: { children: ReactNode; r
           ...current,
           settlementEditor: true,
           expenseEditor: null,
+          expensePrefill: null,
           taskEditor: null,
         })),
       closeSettlement: () => setState((current) => ({ ...current, settlementEditor: false })),
